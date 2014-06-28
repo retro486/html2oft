@@ -1,6 +1,9 @@
 html2oft
 ========
 
+**KNOWN ISSUES**
+* Doesn't work. Yeah, apparently Outlook REALLY wants there to be a compressed RTF stream even though you set only the plain-text message in the source OTF and removing the stream completely/blanking it causes corruption. Fix to come.
+
 Mono.NET project using OpenMCDF to inject HTML into a template OFT file. Meant to not require Windows.
 
 See my blog entry for proper credits but the big two are:
