@@ -9,3 +9,7 @@ See my blog entry for proper credits but the big two are:
 * http://sourceforge.net/projects/openmcdf/
 
 Blog entry: http://blog.rdkl.us/generate-oft-files-from-html-with-mono-net/
+
+Usage: html2oft infile.html outfile.oft
+
+Assumes a blank OFT exists in the current directory named Blank.oft.
