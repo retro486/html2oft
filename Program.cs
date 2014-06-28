@@ -35,7 +35,7 @@ namespace HTML2OFT
 				s = cf.RootStorage.AddStream (HTML_STREAM_ID);
 			}
 
-			s.AppendData(StringToBytes(in_file.ReadToEnd()));
+			s.SetData(StringToBytes(in_file.ReadToEnd()));
 
 			in_file.Close ();
 			cf.Save (OUTPUT_FILENAME);
