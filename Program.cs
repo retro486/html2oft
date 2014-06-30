@@ -25,7 +25,7 @@ namespace HTML2OFT
         static byte[] RW_FLAG = { 0x06, 0x00, 0x00, 0x00 };
         static byte[] ENABLED_FLAG = { 0x03, 0x00, 0x00, 0x00 };
 
-		public static void Main (string[] args)
+        public static void Main (string[] args)
 		{
 			if (args.Length < 2) {
 				Console.WriteLine ("Must specify input HTML then output OFT filenames.");
@@ -51,36 +51,41 @@ namespace HTML2OFT
                 cf.RootStorage.Delete(PLAINTEXT_STREAM_ID);
             }
             catch (CFItemNotFound e) { }
-            s = cf.RootStorage.AddStream(PLAINTEXT_STREAM_ID);
-            s.SetData(StringToBytes(in_data));
+            //s = cf.RootStorage.AddStream(PLAINTEXT_STREAM_ID);
+            //s.SetData(StringToBytes(in_data));
 
             try
             {
                 cf.RootStorage.Delete(HTML_STREAM_ID);
             }
             catch (CFItemNotFound e) { }
-            s = cf.RootStorage.AddStream(HTML_STREAM_ID);
-            s.SetData(StringToBytes(in_data));
+            //s = cf.RootStorage.AddStream(HTML_STREAM_ID);
+            //s.SetData(StringToBytes(in_data));
 
             try
             {
                 cf.RootStorage.Delete(COMPRESSED_RTF_STREAM_ID);
             }
             catch (CFItemNotFound e) { }
-            //cf.RootStorage.AddStream(COMPRESSED_RTF_STREAM_ID); // leave empty
+            s = cf.RootStorage.AddStream(COMPRESSED_RTF_STREAM_ID); // leave empty
+            byte[] rtfData = RTFTools.CompressString(RTFTools.AttachRTFHeader(in_data));
+            s.SetData(rtfData);
                         
             try
             {
                 s = cf.RootStorage.GetStream(PROPERTIES_STREAM_ID);
                 properties = s.GetData();
 
-                // Clear RTF fields to force HTML via Best Body Algorithm: http://msdn.microsoft.com/en-us/library/hh369831%28v=exchg.80%29.aspx
-                properties = SetPropertyValue(properties, COMPRESSED_RTF_ID, RW_FLAG, CLEAR_WORD, ENABLED_FLAG);
-                properties = SetPropertyValue(properties, RTF_IN_SYNC_ID, RW_FLAG, CLEAR_WORD, CLEAR_WORD);
-                properties = SetPropertyValue(properties, NATIVE_BODY_ID, RW_FLAG, new byte[] { 0x03, 0x00, 0x00, 0x00 }, CLEAR_WORD); // Set native body to HTML
+                properties = SetPropertyValue(properties, COMPRESSED_RTF_ID, RW_FLAG, BitConverter.GetBytes((Int32)rtfData.Length), ENABLED_FLAG);
+                
+                // Try to make use of Best Body Algorithm: http://msdn.microsoft.com/en-us/library/hh369831%28v=exchg.80%29.aspx
+                properties = SetPropertyValue(properties, RTF_IN_SYNC_ID, RW_FLAG, new byte[]{0x01, 0x00, 0x00, 0x00}, CLEAR_WORD);
+                properties = SetPropertyValue(properties, NATIVE_BODY_ID, RW_FLAG, new byte[] { 0x02, 0x00, 0x00, 0x00 }, CLEAR_WORD); // Set native body to RTF Compressed
 
-                properties = SetPropertyValue(properties, HTML_ID, RW_FLAG, BitConverter.GetBytes((Int32)in_data.Length + 2), ENABLED_FLAG);
-                properties = SetPropertyValue(properties, PLAINTEXT_ID, RW_FLAG, BitConverter.GetBytes((Int32)in_data.Length + 2), ENABLED_FLAG);
+                // Clear other formats
+                properties = SetPropertyValue(properties, HTML_ID, RW_FLAG, CLEAR_WORD, ENABLED_FLAG);
+                properties = SetPropertyValue(properties, PLAINTEXT_ID, RW_FLAG, CLEAR_WORD, ENABLED_FLAG);
+
                 s.SetData(properties);
             }
             catch (OpenMcdf.CFItemNotFound e)
