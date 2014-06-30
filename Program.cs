@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Confirmed that MAPI makes use of some special binary stream in PR_RTF_COMPRESSED to store HTML:
+// http://support.microsoft.com/kb/268440
+using System;
 using System.Collections.Generic;
 using System.Text;
 using OpenMcdf;
@@ -20,6 +22,7 @@ namespace HTML2OFT
         static byte[] COMPRESSED_RTF_ID = { 0x10, 0x09, 0x01, 0x02 };
         static byte[] RTF_IN_SYNC_ID = { 0x0e, 0x1f, 0x00, 0x0b };
         static byte[] NATIVE_BODY_ID = { 0x10, 0x16, 0x00, 0x03 };
+        static byte[] PR_STORE_SUPPORT_MARK = { 0x00, 0x04, 0x00, 0x00 };
 
         static byte[] CLEAR_WORD = { 0x00, 0x00, 0x00, 0x00 };
         static byte[] RW_FLAG = { 0x06, 0x00, 0x00, 0x00 };
@@ -40,9 +43,9 @@ namespace HTML2OFT
 
             CompoundFile cf = new CompoundFile(TEMPLATE_FILENAME);
 
-            StreamReader in_file = File.OpenText(inputFilename);
-            string in_data = in_file.ReadToEnd();
-            in_file.Close();
+            StreamReader inFile = File.OpenText(inputFilename);
+            string inData = inFile.ReadToEnd();
+            inFile.Close();
 
             CFStream s = null;
 
@@ -52,38 +55,38 @@ namespace HTML2OFT
             }
             catch (CFItemNotFound e) { }
             //s = cf.RootStorage.AddStream(PLAINTEXT_STREAM_ID);
-            //s.SetData(StringToBytes(in_data));
+            //s.SetData(StringToBytes(inData));
 
             try
             {
                 cf.RootStorage.Delete(HTML_STREAM_ID);
             }
             catch (CFItemNotFound e) { }
-            //s = cf.RootStorage.AddStream(HTML_STREAM_ID);
-            //s.SetData(StringToBytes(in_data));
+            s = cf.RootStorage.AddStream(HTML_STREAM_ID);
+            s.SetData(StringToBytes(inData));
 
             try
             {
                 cf.RootStorage.Delete(COMPRESSED_RTF_STREAM_ID);
             }
             catch (CFItemNotFound e) { }
-            s = cf.RootStorage.AddStream(COMPRESSED_RTF_STREAM_ID); // leave empty
-            byte[] rtfData = RTFTools.CompressString(RTFTools.AttachRTFHeader(in_data));
-            s.SetData(rtfData);
+            //s = cf.RootStorage.AddStream(COMPRESSED_RTF_STREAM_ID);
+            //byte[] rtfData = RTFTools.BuildCompressedRTF(RTFTools.AttachRTFHeader(in_data));
+            //byte[] rtfData = RTFTools.BuildUncompressedRTF(inData);
+            //s.SetData(rtfData);
                         
             try
             {
                 s = cf.RootStorage.GetStream(PROPERTIES_STREAM_ID);
                 properties = s.GetData();
 
-                properties = SetPropertyValue(properties, COMPRESSED_RTF_ID, RW_FLAG, BitConverter.GetBytes((Int32)rtfData.Length), ENABLED_FLAG);
-                
-                // Try to make use of Best Body Algorithm: http://msdn.microsoft.com/en-us/library/hh369831%28v=exchg.80%29.aspx
-                properties = SetPropertyValue(properties, RTF_IN_SYNC_ID, RW_FLAG, new byte[]{0x01, 0x00, 0x00, 0x00}, CLEAR_WORD);
-                properties = SetPropertyValue(properties, NATIVE_BODY_ID, RW_FLAG, new byte[] { 0x02, 0x00, 0x00, 0x00 }, CLEAR_WORD); // Set native body to RTF Compressed
+                // RTF flags
+                properties = SetPropertyValue(properties, RTF_IN_SYNC_ID, RW_FLAG, new byte[]{0x00, 0x00, 0x00, 0x00}, CLEAR_WORD);
+                properties = SetPropertyValue(properties, NATIVE_BODY_ID, RW_FLAG, new byte[] { 0x01, 0x00, 0x00, 0x00 }, CLEAR_WORD); // Set native body to RTF Compressed (0x02), others: (0x00 = plaintext, 0x01 = html)
 
-                // Clear other formats
-                properties = SetPropertyValue(properties, HTML_ID, RW_FLAG, CLEAR_WORD, ENABLED_FLAG);
+                // Content lengths
+                properties = SetPropertyValue(properties, COMPRESSED_RTF_ID, RW_FLAG, CLEAR_WORD, ENABLED_FLAG);
+                properties = SetPropertyValue(properties, HTML_ID, RW_FLAG, BitConverter.GetBytes((Int32)inData.Length +2), ENABLED_FLAG);
                 properties = SetPropertyValue(properties, PLAINTEXT_ID, RW_FLAG, CLEAR_WORD, ENABLED_FLAG);
 
                 s.SetData(properties);

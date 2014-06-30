@@ -10,8 +10,11 @@ namespace HTML2OFT
     {
         // Written based on spec paper at http://msdn.microsoft.com/en-us/library/cc463890%28v=exchg.80%29.aspx
         protected static string RTF_DICTIONARY = "{\\rtf1\\ansi\\mac\\deff0\\deftab720{\\fonttbl;}"
-            + "{\\f0\\fnil\0x20\\froman\0x20\\fswiss\0x20\\fmodern\0x20\\fscript\0x20\\fdecor\0x20MS\0x20Sans\0x20SerifSymbolArialTimes\0x20New\0x20RomanCourier"
-            + "{\\colortbl\\red0\\ green0\\blue0\0x0d\0x0a\\par\0x20\\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx";
+            + "{\\f0\\fnil" + (byte)0x20 + "\\froman" + (byte)0x20 + "\\fswiss" + (byte)0x20 + "\\fmodern" + (byte)0x20
+            + "\\fscript" + (byte)0x20 + "\\fdecor" + (byte)0x20 + "MS" + (byte)0x20 + "Sans" + (byte)0x20 + "SerifSymbolArialTimes"
+            + (byte)0x20 + "New" + (byte)0x20 + "RomanCourier"
+            + "{\\colortbl\\red0\\ green0\\blue0" + (byte)0x0d + (byte)0x0a + "\\par" + (byte)0x20 + "\\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx";
+        
         protected static uint[] CRC32_TABLE = {
             0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b,
             0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7, 0x136c9856, 0x646ba8c0,
@@ -34,6 +37,8 @@ namespace HTML2OFT
             0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9, 0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729,
             0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d                 
         };
+        protected static uint COMPRESSED_FLAG = 0x75465A4C;
+        protected static uint UNCOMPRESSED_FLAG = 0x414C454D;
 
         public static byte[] MakeLittleEndian(byte[] src)
         {
@@ -57,12 +62,26 @@ namespace HTML2OFT
             return c;
         }
 
-        public static byte[] BuildHeader(string contents, byte[] compressed)
+        protected static byte[] BuildCompressedHeader(string contents, byte[] compressed)
         {
             byte[] compSize = BitConverter.GetBytes((UInt32)compressed.Length + 12);
             byte[] rawSize = BitConverter.GetBytes((UInt32)contents.Length);
-            byte[] compType = BitConverter.GetBytes(0x75465A4C);
+            byte[] compType = BitConverter.GetBytes(COMPRESSED_FLAG);
             byte[] crc = BitConverter.GetBytes((UInt32)CalculateCRC32(compressed, 0, compressed.Length));
+            byte[] header = new byte[16];
+            Buffer.BlockCopy(compSize, 0, header, 0, 4);
+            Buffer.BlockCopy(rawSize, 0, header, 4, 4);
+            Buffer.BlockCopy(compType, 0, header, 8, 4);
+            Buffer.BlockCopy(crc, 0, header, 12, 4);
+            return header;
+        }
+
+        protected static byte[] BuildUncompressedHeader(string contents)
+        {
+            byte[] compSize = BitConverter.GetBytes((UInt32)contents.Length + 12);
+            byte[] rawSize = BitConverter.GetBytes((UInt32)contents.Length);
+            byte[] compType = BitConverter.GetBytes(UNCOMPRESSED_FLAG);
+            byte[] crc = new byte[] { 0, 0, 0, 0 };
             byte[] header = new byte[16];
             Buffer.BlockCopy(compSize, 0, header, 0, 4);
             Buffer.BlockCopy(rawSize, 0, header, 4, 4);
@@ -76,7 +95,18 @@ namespace HTML2OFT
             return RTF_DICTIONARY + raw;
         }
 
-        public static byte[] CompressString(string raw)
+        public static byte[] BuildUncompressedRTF(string raw)
+        {
+            byte[] rawBytes = Encoding.ASCII.GetBytes(raw);
+            List<byte> uncompressed = new List<byte>(BuildUncompressedHeader(raw));
+            
+            // Inject header
+            uncompressed.AddRange(rawBytes);
+
+            return uncompressed.ToArray();
+        }
+
+        public static byte[] BuildCompressedRTF(string raw)
         {
             byte[] rawBytes = Encoding.ASCII.GetBytes(raw);
             byte[] dictionaryBytes = new byte[4096];
@@ -86,7 +116,7 @@ namespace HTML2OFT
             byte[] tokenBuffer = new byte[16];
             int tokenOffset = 0;
             int runOffset = 0;
-            byte controlByte = 0x00;
+            byte controlByte = 0;
             byte controlBit = 0x01;
 
             byte[] rtfDictionary = Encoding.ASCII.GetBytes(RTF_DICTIONARY);
@@ -165,8 +195,10 @@ namespace HTML2OFT
                 {
                     compressed.Add(controlByte);
                     for (int j = 0; j < tokenOffset; j++) compressed.Add(tokenBuffer[j]);
-                    compressed.Add(0x00); // spacer byte
+                    //compressed.Add(0x00); // spacer byte
                     tokenOffset = 0; tokenBuffer = new byte[16];
+                    controlByte = 0;
+                    controlBit = 0x01;
                 }    
             }
 
@@ -176,10 +208,10 @@ namespace HTML2OFT
             controlByte |= controlBit;
             compressed.Add(controlByte);
             for (int j = 0; j < tokenOffset; j++) compressed.Add(tokenBuffer[j]);
-            compressed.Add(0x00); // spacer byte
+            //compressed.Add(0x00); // spacer byte
             
             // Inject header
-            compressed.InsertRange(0, BuildHeader(raw, compressed.ToArray()));
+            compressed.InsertRange(0, BuildCompressedHeader(raw, compressed.ToArray()));
 
             return compressed.ToArray();
         }
